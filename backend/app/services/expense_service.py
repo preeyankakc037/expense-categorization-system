@@ -58,3 +58,21 @@ def update_expense(
     db.refresh(transaction)
 
     return transaction
+
+def delete_expense(db: Session, expense_id: int) -> bool:
+    transaction = (
+        db.query(Transaction)
+        .filter(
+            Transaction.id == expense_id,
+            Transaction.transaction_type == "expense",
+        )
+        .first()
+    )
+
+    if transaction is None:
+        return False
+
+    db.delete(transaction)
+    db.commit()
+
+    return True

@@ -8,6 +8,7 @@ from services.expense_service import (
     create_expense,
     get_expenses,
     update_expense,
+    delete_expense,
 )
 
 router = APIRouter()
@@ -44,3 +45,23 @@ def update_expense_route(
         )
 
     return updated_expense
+
+
+# DELETE Expense 
+
+@router.delete("/expenses/{expense_id}")
+def delete_expense_route(
+    expense_id: int,
+    db: Session = Depends(get_db),
+):
+    deleted = delete_expense(db, expense_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Expense not found",
+        )
+
+    return {
+        "message": "Expense deleted successfully"
+    }
