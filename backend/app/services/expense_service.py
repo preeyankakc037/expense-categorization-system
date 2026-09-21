@@ -18,3 +18,12 @@ def create_expense(db: Session, expense: ExpenseCreate) -> Transaction:
     db.refresh(transaction)
 
     return transaction
+
+
+def get_expenses(db: Session) -> list[Transaction]:
+    return (
+        db.query(Transaction)
+        .filter(Transaction.transaction_type == "expense")
+        .order_by(Transaction.transaction_date.desc())
+        .all()
+    )
