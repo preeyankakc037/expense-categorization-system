@@ -2,9 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from schemas.expense_schemas import ExpenseCreate, ExpenseResponse
-from services.expense_service import create_expense
-from services.expense_service import create_expense, get_expenses
+from schemas.expense_schemas import ExpenseCreate, ExpenseResponse,ExpenseUpdate
+from fastapi import APIRouter, Depends, HTTPException
+from services.expense_service import (
+    create_expense,
+    get_expenses,
+    update_expense,
+)
 
 router = APIRouter()
 
@@ -23,3 +27,20 @@ def get_expenses_route(
     db: Session = Depends(get_db),
 ):
     return get_expenses(db)
+
+# PUT EXPENSE
+@router.put("/expenses/{expense_id}", response_model=ExpenseResponse)
+def update_expense_route(
+    expense_id: int,
+    expense: ExpenseUpdate,
+    db: Session = Depends(get_db),
+):
+    updated_expense = update_expense(db, expense_id, expense)
+
+    if updated_expense is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Expense not found",
+        )
+
+    return updated_expense
