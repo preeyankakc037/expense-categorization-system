@@ -1,33 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Search, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
+import { expenseCategoryGroups } from '../constants/categories';
 
-// Mock data (replace with API calls later)
-const initialExpenses = [
-  { id: 1, description: 'Grocery Store', category: 'Food', amount: 4500, date: '2026-09-15' },
-  { id: 2, description: 'Uber Ride', category: 'Transport', amount: 800, date: '2026-09-14' },
-  { id: 3, description: 'Netflix Subscription', category: 'Entertainment', amount: 1200, date: '2026-09-12' },
-  { id: 4, description: 'Electricity Bill', category: 'Housing', amount: 3500, date: '2026-09-10' },
-  { id: 5, description: 'Coffee Shop', category: 'Food', amount: 450, date: '2026-09-09' },
-];
 
-const categoryOptions = [
-  { value: 'Food', label: 'Food' },
-  { value: 'Transport', label: 'Transport' },
-  { value: 'Housing', label: 'Housing' },
-  { value: 'Entertainment', label: 'Entertainment' },
-  { value: 'Utilities', label: 'Utilities' },
-];
+const categoryOptions =
+  expenseCategoryGroups.flatMap(
+    (group) => group.categories
+  );
 
 export function Expenses() {
-  const [expenses, setExpenses] = useState(initialExpenses);
+
+  // ADD NOW — real backend approach
+  const [expenses, setExpenses] = useState([]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
+
+// ==============================
+// GET EXPENSES FROM BACKEND
+// ==============================
+
+useEffect(() => {
+
+  // Ask FastAPI for all expenses
+  fetch("http://localhost:8000/expenses")
+
+    // Convert the HTTP response into JavaScript data
+    .then((response) => response.json())
+
+    // Put the backend data into React state
+    .then((data) => {
+      setExpenses(data);
+    });
+
+}, []);
+
+
 
   // Form state
   const [formData, setFormData] = useState({
@@ -44,7 +58,7 @@ export function Expenses() {
         description: expense.description,
         amount: expense.amount,
         category: expense.category,
-        date: expense.date
+        date: expense.transaction_date
       });
     } else {
       setEditingExpense(null);
@@ -56,6 +70,64 @@ export function Expenses() {
   const handleDeleteConfirm = (expense) => {
     setExpenseToDelete(expense);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleSaveExpense = async () => {
+    try {
+      const url = editingExpense 
+        ? `http://localhost:8000/expenses/${editingExpense.id}`
+        : "http://localhost:8000/expenses";
+      
+      const method = editingExpense ? "PUT" : "POST";
+      
+      const payload = {
+        description: formData.description,
+        amount: parseFloat(formData.amount) || 0,
+        category: formData.category,
+        transaction_date: formData.date
+      };
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (editingExpense) {
+          setExpenses(expenses.map(exp => exp.id === data.id ? data : exp));
+        } else {
+          setExpenses([...expenses, data]);
+        }
+        setIsModalOpen(false);
+      } else {
+        console.error("Failed to save expense");
+      }
+    } catch (error) {
+      console.error("Error saving expense:", error);
+    }
+  };
+
+  const handleDeleteExpense = async () => {
+    if (!expenseToDelete) return;
+    try {
+      const response = await fetch(`http://localhost:8000/expenses/${expenseToDelete.id}`, {
+        method: "DELETE"
+      });
+
+      if (response.ok) {
+        setExpenses(expenses.filter(exp => exp.id !== expenseToDelete.id));
+        setIsDeleteDialogOpen(false);
+        setExpenseToDelete(null);
+      } else {
+        console.error("Failed to delete expense");
+      }
+    } catch (error) {
+      console.error("Error deleting expense:", error);
+    }
   };
 
   return (
@@ -119,7 +191,7 @@ export function Expenses() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-slate-800 font-medium">Rs. {expense.amount.toLocaleString()}</td>
-                  <td className="px-6 py-4 text-slate-500">{expense.date}</td>
+                  <td className="px-6 py-4 text-slate-500">{expense.transaction_date}</td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button 
@@ -157,7 +229,7 @@ export function Expenses() {
               <p className="font-semibold text-slate-900">Rs. {expense.amount.toLocaleString()}</p>
             </div>
             <div className="flex justify-between items-center mt-4 pt-4 border-t border-slate-100">
-              <span className="text-xs text-slate-500">{expense.date}</span>
+              <span className="text-xs text-slate-500">{expense.transaction_date}</span>
               <div className="flex items-center gap-2">
                 <button 
                   onClick={() => handleOpenModal(expense)}
@@ -214,7 +286,7 @@ export function Expenses() {
           <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
             Cancel
           </Button>
-          <Button>
+          <Button onClick={handleSaveExpense}>
             {editingExpense ? 'Save Changes' : 'Save Expense'}
           </Button>
         </div>
@@ -239,7 +311,7 @@ export function Expenses() {
           <Button variant="secondary" onClick={() => setIsDeleteDialogOpen(false)}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={() => setIsDeleteDialogOpen(false)}>
+          <Button variant="destructive" onClick={handleDeleteExpense}>
             Delete
           </Button>
         </div>
