@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware  
 from api.routes.expenses_routes import router as expense_router
-
+from api.routes.ml_routes import router as ml_router
 
 app=FastAPI()
 # ==================================================
@@ -26,3 +26,6 @@ def root():
     return{"message":"Expense API is running"}
 
 app.include_router(expense_router)
+
+
+app.include_router(ml_router)
