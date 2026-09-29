@@ -10,12 +10,17 @@ const suggestions = [
   "Delete my Uber expense."
 ];
 
-// Mock initial state
+const CATEGORIES = [
+  'Education', 'Entertainment', 'Fees', 'Groceries', 'Healthcare',
+  'Housing', 'Insurance', 'Personal Care', 'Restaurants', 'Shopping',
+  'Subscription', 'Transportation', 'Travel', 'Utilities'
+];
+
 const initialMessages = [
   {
     id: 1,
     role: 'assistant',
-    content: 'How can I help with your expenses?',
+    content: 'Hi! I am your AI Expense Assistant. Tell me what you spent on recently.',
     isConfirmation: false
   }
 ];
@@ -33,32 +38,68 @@ export function AIAssistant() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = (text) => {
+  const handleSend = async (text) => {
     if (!text.trim()) return;
 
     const userMessage = { id: Date.now(), role: 'user', content: text };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
 
-    // Simulate AI response based on the prompt
-    setTimeout(() => {
-      let aiResponse = { id: Date.now() + 1, role: 'assistant', content: '', isConfirmation: false };
-
-      if (text.toLowerCase().includes('add') && text.toLowerCase().includes('lunch')) {
-        aiResponse.content = 'I can help with that. Please confirm the details below:';
-        aiResponse.isConfirmation = true;
-        aiResponse.confirmationData = {
-          description: 'Lunch',
-          amount: 'Rs. 500',
-          category: 'Restaurants',
-          date: 'Today'
-        };
-      } else {
-        aiResponse.content = "I understand you want to manage your expenses. I'll be fully connected to the backend soon to process this request!";
+    try {
+      const response = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+      const data = await response.json();
+      
+      let aiResponse = { id: Date.now() + 1, role: 'assistant', content: data.message, isConfirmation: false };
+      
+      if (data.status === 'PENDING_CONFIRMATION' && data.expense) {
+         aiResponse.isConfirmation = true;
+         aiResponse.confirmationData = {
+           description: data.expense.description,
+           amount: data.expense.amount,
+           category: data.expense.predicted_category,
+           date: data.expense.date,
+           confidence: data.expense.confidence
+         };
       }
-
       setMessages(prev => [...prev, aiResponse]);
-    }, 1000);
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', content: 'Oops! Something went wrong connecting to the server.' }]);
+    }
+  };
+
+  const handleConfirmExpense = async (msgId, expenseData) => {
+    try {
+      const response = await fetch('http://localhost:8000/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: expenseData.description,
+          amount: parseFloat(expenseData.amount),
+          category: expenseData.category,
+          transaction_date: expenseData.date
+        })
+      });
+      
+      if (response.ok) {
+        setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, isConfirmation: false } : msg));
+        setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', content: 'Expense saved successfully!' }]);
+      } else {
+        setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', content: 'Failed to save expense.' }]);
+      }
+    } catch (error) {
+      console.error("Failed to save", error);
+      setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', content: 'Error saving expense.' }]);
+    }
+  };
+
+  const handleCancelExpense = (msgId) => {
+    setMessages(prev => prev.map(msg => msg.id === msgId ? { ...msg, isConfirmation: false } : msg));
+    setMessages(prev => [...prev, { id: Date.now() + 1, role: 'assistant', content: 'No problem, I cancelled that expense.' }]);
   };
 
   return (
@@ -69,7 +110,6 @@ export function AIAssistant() {
       </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden bg-white shadow-sm border-slate-200">
-        {/* Chat Area */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
           {messages.length === 1 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-8 max-w-2xl mx-auto">
@@ -98,21 +138,37 @@ export function AIAssistant() {
 
                 {msg.isConfirmation && msg.confirmationData && (
                   <div className="bg-white border border-primary-100 shadow-sm rounded-xl overflow-hidden w-64 md:w-80">
-                    <div className="bg-primary-50 px-4 py-2 border-b border-primary-100">
+                    <div className="bg-primary-50 px-4 py-2 border-b border-primary-100 flex justify-between items-center">
                       <p className="text-xs font-semibold text-primary-700 uppercase tracking-wider">I understood:</p>
+                      {msg.confirmationData.confidence && (
+                        <span className="text-[10px] font-bold text-primary-600 bg-primary-100 px-2 py-0.5 rounded-full">
+                           {(msg.confirmationData.confidence * 100).toFixed(0)}% Match
+                        </span>
+                      )}
                     </div>
-                    <div className="p-4 space-y-2">
+                    <div className="p-4 space-y-3">
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Description</span>
                         <span className="font-medium text-slate-800">{msg.confirmationData.description}</span>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Amount</span>
-                        <span className="font-medium text-slate-800">{msg.confirmationData.amount}</span>
+                        <span className="font-medium text-slate-800">Rs. {msg.confirmationData.amount}</span>
                       </div>
-                      <div className="flex justify-between text-sm">
+                      <div className="flex justify-between text-sm items-center">
                         <span className="text-slate-500">Category</span>
-                        <span className="font-medium text-slate-800">{msg.confirmationData.category}</span>
+                        <select 
+                           value={msg.confirmationData.category}
+                           onChange={(e) => {
+                              const newCat = e.target.value;
+                              setMessages(prev => prev.map(m => m.id === msg.id ? {
+                                 ...m, confirmationData: { ...m.confirmationData, category: newCat }
+                              } : m));
+                           }}
+                           className="font-medium text-slate-800 bg-white border border-slate-200 rounded px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary-500"
+                        >
+                          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-slate-500">Date</span>
@@ -120,10 +176,10 @@ export function AIAssistant() {
                       </div>
                     </div>
                     <div className="p-3 bg-slate-50 flex gap-2 border-t border-slate-100">
-                      <Button variant="secondary" size="sm" className="flex-1 gap-1">
+                      <Button variant="secondary" size="sm" className="flex-1 gap-1" onClick={() => handleCancelExpense(msg.id)}>
                         <X className="w-3.5 h-3.5" /> Cancel
                       </Button>
-                      <Button size="sm" className="flex-1 gap-1">
+                      <Button size="sm" className="flex-1 gap-1" onClick={() => handleConfirmExpense(msg.id, msg.confirmationData)}>
                         <Check className="w-3.5 h-3.5" /> Save
                       </Button>
                     </div>
@@ -135,7 +191,6 @@ export function AIAssistant() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
         <div className="p-4 border-t border-slate-100 bg-white shrink-0">
           <form 
             onSubmit={(e) => { e.preventDefault(); handleSend(input); }}
@@ -145,7 +200,7 @@ export function AIAssistant() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask me to add an expense, show charts, etc..."
+              placeholder="E.g. I spent 25 at Starbucks yesterday"
               className="flex-1 bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-shadow"
             />
             <button
